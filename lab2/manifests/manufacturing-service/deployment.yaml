@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: manufacturing-service
   namespace: dev
+  labels:
+    app: manufacturing-service
+    env: dev
 spec:
   replicas: 1
   selector:
@@ -12,6 +15,7 @@ spec:
     metadata:
       labels:
         app: manufacturing-service
+        env: dev
     spec:
       serviceAccountName: manufacturing-service
       securityContext:
@@ -20,15 +24,18 @@ spec:
         runAsUser: 1000
       terminationGracePeriodSeconds: 30
       containers:
-        - name: manufacturing-service
-          image: 516209541629.dkr.ecr.us-east-1.amazonaws.com/manufacturing-service:sha-a0017b8
+        - name: pharma-service
+          image: 516209541629.dkr.ecr.us-east-1.amazonaws.com/manufacturing-service:sha-ef1ccc7
           imagePullPolicy: Always
           ports:
-            - containerPort: 8085
+            - name: http
+              containerPort: 8085
+              protocol: TCP
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
@@ -45,6 +52,7 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
+            successThreshold: 1
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -53,6 +61,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+            successThreshold: 1
           resources:
             requests:
               cpu: 100m

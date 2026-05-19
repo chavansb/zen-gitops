@@ -3,11 +3,15 @@ kind: Service
 metadata:
   name: supplier-service
   namespace: dev
+  labels:
+    app: supplier-service
+    env: dev
 spec:
   type: ClusterIP
-  selector:
-    app: supplier-service
   ports:
     - port: 8084
       targetPort: 8084
       protocol: TCP
+      name: http
+  selector:
+    app: supplier-service

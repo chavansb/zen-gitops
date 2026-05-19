@@ -3,11 +3,15 @@ kind: Service
 metadata:
   name: drug-catalog-service
   namespace: dev
+  labels:
+    app: drug-catalog-service
+    env: dev
 spec:
   type: ClusterIP
-  selector:
-    app: drug-catalog-service
   ports:
     - port: 8082
       targetPort: 8082
       protocol: TCP
+      name: http
+  selector:
+    app: drug-catalog-service
