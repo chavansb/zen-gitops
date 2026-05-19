@@ -36,7 +36,7 @@ metadata:
     env: dev
 subjects:
   - kind: User
-    name: YOUR_IAM_USERNAME
+    name: chandika
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: Role

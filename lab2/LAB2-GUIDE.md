@@ -578,3 +578,137 @@ zen-gitops repo
 - Update a values file, push, watch ArgoCD sync dev automatically
 - Show a prod app OutOfSync waiting for the manual gate
 - Explain: "This is how a code change travels from developer commit to production"
+
+---
+
+# Part 3 — External Secrets Operator
+
+## The Problem With Lab 1 Secrets
+
+In Lab 1 you ran `kubectl create secret` by hand. Someone had to know the plaintext value, type it into a terminal, and hope it never ended up in a `.env` file or Slack message. That is fine for a lab. It does not work in production for three reasons:
+
+1. **Secrets live only in etcd.** Base64-encoded, not encrypted by default. Anyone with `kubectl get secret` in that namespace can read the value. If the cluster is destroyed, the secrets are gone.
+2. **Rotation is fully manual.** Changing a password means `kubectl delete secret` + `kubectl create secret` + pod restarts, repeated in every namespace that needs it.
+3. **GitOps breaks down.** Your cluster state should be reproducible from Git. But you cannot commit plaintext secrets to Git. You are left with a gap — the cluster cannot be rebuilt from Git alone.
+
+---
+
+## What External Secrets Operator Does
+
+ESO bridges **AWS Secrets Manager** (the encrypted source of truth) and **Kubernetes Secrets** (what pods actually consume). It watches for `ExternalSecret` CRDs in the cluster and materializes them into native K8s Secrets automatically.
+
+```
+AWS Secrets Manager                (encrypted, audited, IAM-gated)
+  /pharma/dev/db-credentials  →  { "username": "...", "password": "..." }
+  /pharma/dev/jwt-secret       →  { "secret": "..." }
+        │
+        │  ESO polls every refreshInterval via IRSA
+        ▼
+ClusterSecretStore                 (cluster-wide AWS connector)
+        │
+        │  ExternalSecret CRD maps remote keys → local K8s Secret keys
+        ▼
+K8s Secret: db-credentials         (materialized in dev/qa/prod namespace)
+  DB_USERNAME: pharmaadmin
+  DB_PASSWORD: ***
+        │
+        │  envFrom: secretRef in Deployment spec
+        ▼
+Pod reads DB_PASSWORD as an environment variable
+```
+
+The pod cannot tell the difference from a hand-created secret. The entire advantage is in everything that happens before and after.
+
+---
+
+## The Three ESO Objects
+
+### 1. ClusterSecretStore (`k8s/external-secrets/cluster-secret-store.yaml`)
+
+Cluster-wide connector to AWS. Defined once, used by all namespaces.
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: aws-secrets-manager
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets    # ServiceAccount in kube-system
+            namespace: kube-system    # annotated with an IAM role ARN
+```
+
+The `external-secrets` ServiceAccount in `kube-system` has an IAM role annotation set up by Terraform. EKS's OIDC provider lets that pod exchange its ServiceAccount JWT for short-lived AWS credentials — **no static AWS access keys anywhere**.
+
+### 2. ExternalSecret per namespace (`k8s/external-secrets/dev-external-secrets.yaml`)
+
+One per secret per environment. Safe to commit to Git — contains paths, not values.
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: db-credentials
+  namespace: dev
+spec:
+  refreshInterval: 1h                  # ESO re-fetches from AWS every hour
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: db-credentials               # name of the K8s Secret ESO will create
+    creationPolicy: Owner              # ESO owns it; deletes K8s Secret if this is deleted
+  data:
+    - secretKey: DB_USERNAME           # key in the resulting K8s Secret
+      remoteRef:
+        key: /pharma/dev/db-credentials    # path in AWS Secrets Manager
+        property: username                  # JSON field within that secret
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: /pharma/dev/db-credentials
+        property: password
+```
+
+The path prefix (`/pharma/dev/` vs `/pharma/prod/`) is how environment isolation is enforced — different IAM policies can restrict which roles can read which paths.
+
+### 3. The materialized K8s Secret
+
+ESO creates this automatically. The Deployment consumes it the same way it consumed the Lab 1 hand-created secret:
+
+```yaml
+envFrom:
+  - secretRef:
+      name: db-credentials    # DB_USERNAME and DB_PASSWORD become env vars
+  - secretRef:
+      name: jwt-secret        # JWT_SECRET becomes an env var
+```
+
+---
+
+## ESO vs Native K8s Secrets
+
+| Concern | Lab 1 (native kubectl) | ESO + AWS Secrets Manager |
+|---|---|---|
+| Source of truth | etcd (base64, not encrypted by default) | AWS Secrets Manager (encrypted, CloudTrail-audited) |
+| Who can read plaintext | Anyone with `kubectl get secret` in that namespace | Only IAM roles you explicitly grant |
+| Rotation | Manual kubectl + pod restart | Update in AWS SM → ESO picks it up on next `refreshInterval` |
+| Audit trail | None | Every read/write logged in AWS CloudTrail |
+| Git safety | Cannot commit secrets; cluster not reproducible from Git | `ExternalSecret` CRD is committed (just a path pointer); values never touch Git |
+| Cross-env isolation | You manage 3 copies manually | Same ExternalSecret pattern, different AWS path, IAM enforces isolation |
+| Disaster recovery | Secrets live in etcd — gone if cluster is destroyed | Secrets survive cluster deletion; reapply the ExternalSecret and they re-materialize |
+
+---
+
+## The GitOps-Specific Reason
+
+The entire cluster state should be reproducible by running `kubectl apply` against the Git repo. With native secrets you always have a gap — someone must run the manual `kubectl create secret` step first, out of band.
+
+With ESO, you commit the `ExternalSecret` CRD to Git (safe — it contains only paths). ArgoCD applies it. ESO reads it and fetches the actual values from AWS. The cluster rebuilds itself completely from Git + AWS, with no manual secret injection step.
+
+`k8s/external-secrets/dev-external-secrets.yaml` is committed to this repo. It contains zero sensitive data — just the AWS Secrets Manager paths like `/pharma/dev/db-credentials`. The actual credentials never leave AWS.

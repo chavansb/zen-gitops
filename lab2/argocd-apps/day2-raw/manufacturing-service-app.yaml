@@ -13,7 +13,7 @@ spec:
   project: pharma
 
   source:
-    repoURL: https://github.com/<YOUR_GITHUB_USERNAME>/zen-gitops.git
+    repoURL: https://github.com/DPP-2026/zen-gitops.git
     targetRevision: HEAD
     path: lab2/manifests/manufacturing-service
 
