@@ -766,11 +766,174 @@ The pod cannot tell the difference from a hand-created secret. The entire advant
 
 ---
 
-## The Three ESO Objects
+## Step 1 — Prerequisites
 
-### 1. ClusterSecretStore (`k8s/external-secrets/cluster-secret-store.yaml`)
+**Terraform must have run Stage 1 first.** The setup script relies on an IAM role that Terraform creates. Confirm:
 
-Cluster-wide connector to AWS. Defined once, used by all namespaces.
+```bash
+# Verify the ESO IAM role exists (default naming convention: pharma-<env>-eso-role)
+aws iam get-role --role-name pharma-dev-eso-role \
+  --query 'Role.Arn' --output text
+# Expected: arn:aws:iam::<account-id>:role/pharma-dev-eso-role
+```
+
+If this returns an error, run `terraform apply` in `zen-infra` before continuing.
+
+Also confirm the Secrets Manager paths exist:
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id /pharma/dev/db-credentials \
+  --query 'SecretString' --output text
+# Expected: {"username":"pharmaadmin","password":"..."}
+
+aws secretsmanager get-secret-value \
+  --secret-id /pharma/dev/jwt-secret \
+  --query 'SecretString' --output text
+# Expected: {"secret":"..."}
+```
+
+If either is missing, create it in the AWS console (Secrets Manager → Store a new secret → Other type of secret) before continuing.
+
+---
+
+## Step 2 — Install External Secrets Operator
+
+ESO is installed via Helm into its own namespace:
+
+```bash
+helm repo add external-secrets https://charts.external-secrets.io
+helm repo update
+
+helm install external-secrets external-secrets/external-secrets \
+  --namespace external-secrets \
+  --create-namespace \
+  --set installCRDs=true
+
+# Wait for ESO pods to be ready
+kubectl wait --for=condition=ready pod \
+  -l app.kubernetes.io/name=external-secrets \
+  -n external-secrets --timeout=120s
+
+kubectl get pods -n external-secrets
+```
+
+Expected — all pods Running:
+```
+NAME                                               READY   STATUS    RESTARTS
+external-secrets-xxx                               1/1     Running   0
+external-secrets-cert-controller-xxx               1/1     Running   0
+external-secrets-webhook-xxx                       1/1     Running   0
+```
+
+---
+
+## Step 3 — Run the Setup Script
+
+The script at `zen-infra/scripts/03-setup-external-secrets.sh` does four things in order:
+1. Annotates the ESO service account with your IRSA role ARN
+2. Creates the `ClusterSecretStore` pointing to AWS Secrets Manager
+3. Creates `ExternalSecret` resources for `db-credentials` and `jwt-secret` in the target namespace
+4. Polls until both secrets are confirmed synced
+
+Run it from the **zen-infra** directory:
+
+```bash
+cd /path/to/zen-infra
+bash scripts/03-setup-external-secrets.sh
+```
+
+The script will prompt you for four values:
+
+```
+1. Target environment    → dev  (or qa / prod)
+2. AWS region            → us-east-1
+3. AWS account ID        → your 12-digit account number
+4. ESO IAM role name     → pharma-dev-eso-role  (press Enter for default)
+```
+
+**What IRSA means (the script explains this too):** IRSA lets a Kubernetes ServiceAccount assume an AWS IAM role. The ESO pod exchanges its ServiceAccount JWT token for short-lived AWS credentials via EKS's OIDC provider. No passwords or access keys are stored anywhere in the cluster.
+
+Successful output ends with:
+```
+OK  Both secrets synced successfully into namespace 'dev'.
+OK  External Secrets setup complete.
+```
+
+Repeat for each environment you deployed:
+```bash
+# Run once per environment — the script prompts for which one
+bash scripts/03-setup-external-secrets.sh   # choose qa
+bash scripts/03-setup-external-secrets.sh   # choose prod
+```
+
+---
+
+## Step 4 — Verify the Sync
+
+```bash
+# Check ExternalSecret status in the dev namespace
+kubectl get externalsecret -n dev
+```
+
+Expected:
+```
+NAME             STORE                 REFRESH INTERVAL   STATUS         READY
+db-credentials   aws-secrets-manager   1h                 SecretSynced   True
+jwt-secret       aws-secrets-manager   1h                 SecretSynced   True
+```
+
+Confirm the K8s Secrets were materialized:
+```bash
+kubectl get secret db-credentials jwt-secret -n dev
+```
+
+Inspect the keys ESO created (base64-encoded values, not plaintext):
+```bash
+kubectl get secret db-credentials -n dev -o jsonpath='{.data}' | python3 -m json.tool
+```
+
+You should see four keys: `DB_USERNAME`, `DB_PASSWORD`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`. The Spring Boot services use `SPRING_DATASOURCE_*` while others use `DB_*` — ESO materializes all four from the same Secrets Manager entry.
+
+---
+
+## Step 5 — Replace Manual Secrets With ESO-Managed Ones
+
+The Lab 1 secrets you created with `kubectl create secret` were created with `creationPolicy: Owner` by ESO — ESO will not overwrite secrets it does not own. Delete the old hand-created ones so ESO takes ownership:
+
+```bash
+# Only if your secrets were created manually in Lab 1 (not by a previous ESO run)
+kubectl delete secret db-credentials jwt-secret -n dev
+
+# ESO detects the deletion and immediately re-creates them
+# (it reconciles continuously — no need to restart anything)
+kubectl get secret db-credentials jwt-secret -n dev
+# They re-appear within seconds, now owned by ESO
+```
+
+Restart the deployments so pods pick up the freshly-materialized secrets:
+```bash
+for svc in auth-service api-gateway drug-catalog-service inventory-service \
+           manufacturing-service supplier-service qc-service notification-service; do
+  kubectl rollout restart deployment/$svc -n dev
+done
+
+kubectl get pods -n dev -w
+```
+
+Wait for all pods to come back to `1/1 Running`. Verify auth-service is healthy:
+```bash
+kubectl exec -n dev deploy/auth-service -- \
+  curl -s http://localhost:8081/actuator/health
+# Expected: {"status":"UP"}
+```
+
+---
+
+## The Three ESO Objects Explained
+
+### 1. ClusterSecretStore
+
+Cluster-wide connector to AWS. Defined once, used by all namespaces. The script creates this pointing at the `external-secrets` ServiceAccount (in the `external-secrets` namespace) which holds the IRSA annotation:
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -785,15 +948,13 @@ spec:
       auth:
         jwt:
           serviceAccountRef:
-            name: external-secrets    # ServiceAccount in kube-system
-            namespace: kube-system    # annotated with an IAM role ARN
+            name: external-secrets
+            namespace: external-secrets
 ```
 
-The `external-secrets` ServiceAccount in `kube-system` has an IAM role annotation set up by Terraform. EKS's OIDC provider lets that pod exchange its ServiceAccount JWT for short-lived AWS credentials — **no static AWS access keys anywhere**.
+### 2. ExternalSecret per namespace
 
-### 2. ExternalSecret per namespace (`k8s/external-secrets/dev-external-secrets.yaml`)
-
-One per secret per environment. Safe to commit to Git — contains paths, not values.
+One per secret per environment. Safe to commit to Git — contains only AWS paths, never values.
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -802,34 +963,42 @@ metadata:
   name: db-credentials
   namespace: dev
 spec:
-  refreshInterval: 1h                  # ESO re-fetches from AWS every hour
+  refreshInterval: 1h
   secretStoreRef:
     name: aws-secrets-manager
     kind: ClusterSecretStore
   target:
-    name: db-credentials               # name of the K8s Secret ESO will create
-    creationPolicy: Owner              # ESO owns it; deletes K8s Secret if this is deleted
+    name: db-credentials
+    creationPolicy: Owner
   data:
-    - secretKey: DB_USERNAME           # key in the resulting K8s Secret
+    - secretKey: DB_USERNAME
       remoteRef:
-        key: /pharma/dev/db-credentials    # path in AWS Secrets Manager
-        property: username                  # JSON field within that secret
+        key: /pharma/dev/db-credentials
+        property: username
     - secretKey: DB_PASSWORD
+      remoteRef:
+        key: /pharma/dev/db-credentials
+        property: password
+    - secretKey: SPRING_DATASOURCE_USERNAME
+      remoteRef:
+        key: /pharma/dev/db-credentials
+        property: username
+    - secretKey: SPRING_DATASOURCE_PASSWORD
       remoteRef:
         key: /pharma/dev/db-credentials
         property: password
 ```
 
-The path prefix (`/pharma/dev/` vs `/pharma/prod/`) is how environment isolation is enforced — different IAM policies restrict which roles can read which paths.
+The `/pharma/dev/` path prefix is how environment isolation is enforced — different IAM policies can restrict which roles can read which paths.
 
 ### 3. The materialized K8s Secret
 
-ESO creates this automatically. The Deployment consumes it exactly the same way it consumed the Lab 1 hand-created secret:
+ESO creates this automatically. Deployments consume it exactly as they consumed the Lab 1 hand-created secret:
 
 ```yaml
 envFrom:
   - secretRef:
-      name: db-credentials    # DB_USERNAME and DB_PASSWORD become env vars
+      name: db-credentials    # DB_USERNAME, DB_PASSWORD, SPRING_DATASOURCE_* become env vars
   - secretRef:
       name: jwt-secret        # JWT_SECRET becomes an env var
 ```
@@ -844,9 +1013,9 @@ envFrom:
 | Who can read plaintext | Anyone with `kubectl get secret` in that namespace | Only IAM roles you explicitly grant |
 | Rotation | Manual kubectl + pod restart | Update in AWS SM → ESO picks it up on next `refreshInterval` |
 | Audit trail | None | Every read/write logged in AWS CloudTrail |
-| Git safety | Cannot commit secrets; cluster not reproducible from Git | `ExternalSecret` CRD is committed (just a path pointer); values never touch Git |
+| Git safety | Cannot commit secrets; cluster not reproducible from Git | `ExternalSecret` CRD committed (path pointer only); values never touch Git |
 | Cross-env isolation | You manage 3 copies manually | Same ExternalSecret pattern, different AWS path, IAM enforces isolation |
-| Disaster recovery | Secrets live in etcd — gone if cluster is destroyed | Secrets survive cluster deletion; reapply the ExternalSecret and they re-materialize |
+| Disaster recovery | Secrets gone if cluster is destroyed | Secrets survive cluster deletion; reapply ExternalSecret and they re-materialize |
 
 ---
 
@@ -857,6 +1026,42 @@ The entire cluster state should be reproducible by running `kubectl apply` again
 With ESO, you commit the `ExternalSecret` CRD to Git (safe — it contains only paths). ArgoCD applies it. ESO reads it and fetches the actual values from AWS. The cluster rebuilds itself completely from Git + AWS, with no manual secret injection step.
 
 `k8s/external-secrets/dev-external-secrets.yaml` is committed to this repo. It contains zero sensitive data — just the AWS Secrets Manager paths like `/pharma/dev/db-credentials`. The actual credentials never leave AWS.
+
+---
+
+## Troubleshooting ESO
+
+### ExternalSecret status is `SecretSyncedError`
+
+```bash
+kubectl describe externalsecret db-credentials -n dev
+# Look at the Events section at the bottom
+```
+
+Common causes and fixes:
+
+| Error in Events | Cause | Fix |
+|---|---|---|
+| `AccessDeniedException` | IAM role missing `secretsmanager:GetSecretValue` | Check the IAM policy attached to `pharma-dev-eso-role` in AWS console |
+| `ResourceNotFoundException` | Secret path does not exist in Secrets Manager | Create `/pharma/dev/db-credentials` in AWS Secrets Manager |
+| `WebIdentityErr` | OIDC provider not configured or IRSA annotation missing | Re-run the setup script; check `kubectl get sa external-secrets -n external-secrets -o yaml` for the annotation |
+| `unable to get provider` | ClusterSecretStore not created yet | `kubectl get clustersecretstore aws-secrets-manager` — if absent, re-run the script |
+
+### Check IRSA annotation is present
+
+```bash
+kubectl get sa external-secrets -n external-secrets \
+  -o jsonpath='{.metadata.annotations}'
+# Expected: {"eks.amazonaws.com/role-arn":"arn:aws:iam::<account>:role/pharma-dev-eso-role"}
+```
+
+If missing, re-run the setup script or annotate manually:
+```bash
+kubectl annotate sa external-secrets -n external-secrets \
+  eks.amazonaws.com/role-arn=arn:aws:iam::<ACCOUNT_ID>:role/pharma-dev-eso-role \
+  --overwrite
+kubectl rollout restart deployment/external-secrets -n external-secrets
+```
 
 ---
 
