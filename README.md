@@ -1,5 +1,7 @@
 # zen-gitops
 
+> **Interview questions** have been consolidated → see [zen-interview-prep](../zen-interview-prep/README.md)
+
 GitOps configuration repository for the Zen Pharma platform.
 ArgoCD watches this repo and syncs all changes to the EKS cluster automatically.
 
