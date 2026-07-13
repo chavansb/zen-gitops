@@ -1,22 +1,18 @@
 fullnameOverride: notification-service
-
 image:
   repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/notification-service
-  tag: sha-ef1ccc7
+  tag: sha-c53eec7
   pullPolicy: Always
-
 service:
   type: ClusterIP
   port: 3000
   targetPort: 3000
-
 ingress:
   enabled: false
   className: nginx
   host: prod.pharma.internal
   path: /notifications
   pathType: Prefix
-
 resources:
   requests:
     cpu: 50m
@@ -24,17 +20,14 @@ resources:
   limits:
     cpu: 200m
     memory: 256Mi
-
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
 networkPolicy:
   enabled: true
   allowFromIngressController: false
@@ -43,7 +36,6 @@ networkPolicy:
   ingressControllerPodLabels:
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/component: controller
-
 livenessProbe:
   path: /actuator/health
   port: 3000
@@ -52,7 +44,6 @@ livenessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
   successThreshold: 1
-
 readinessProbe:
   path: /actuator/health/readiness
   port: 3000
@@ -61,7 +52,6 @@ readinessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
   successThreshold: 1
-
 configmap:
   NODE_ENV: production
   PORT: "3000"
@@ -70,11 +60,9 @@ configmap:
   SMTP_PORT: "587"
   EMAIL_FROM: "noreply-prod@example.com"
   DB_HOST: pharma-prod-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
-
 envFrom:
   - secretRef:
       name: db-credentials
-
 serviceAccount:
   create: true
   annotations: {}
