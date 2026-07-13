@@ -1,22 +1,18 @@
 fullnameOverride: supplier-service
-
 image:
   repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/supplier-service
-  tag: sha-ef1ccc7
+  tag: sha-e2f5bd1
   pullPolicy: Always
-
 service:
   type: ClusterIP
   port: 8084
   targetPort: 8084
-
 ingress:
   enabled: false
   className: nginx
   host: prod.pharma.internal
   path: /suppliers
   pathType: Prefix
-
 resources:
   requests:
     cpu: 250m
@@ -24,17 +20,14 @@ resources:
   limits:
     cpu: 1000m
     memory: 1Gi
-
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
 networkPolicy:
   enabled: true
   allowFromIngressController: false
@@ -43,7 +36,6 @@ networkPolicy:
   ingressControllerPodLabels:
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/component: controller
-
 livenessProbe:
   path: /actuator/health
   port: 8084
@@ -52,7 +44,6 @@ livenessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
   successThreshold: 1
-
 readinessProbe:
   path: /actuator/health/readiness
   port: 8084
@@ -61,18 +52,15 @@ readinessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
   successThreshold: 1
-
 configmap:
   SPRING_PROFILES_ACTIVE: prod
   DB_HOST: pharma-prod-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
   LOG_LEVEL: WARN
   SERVER_PORT: "8084"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
-
 envFrom:
   - secretRef:
       name: db-credentials
-
 affinity:
   podAntiAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:
@@ -83,15 +71,12 @@ affinity:
               values:
                 - supplier-service
         topologyKey: kubernetes.io/hostname
-
 volumeMounts:
   - name: tmp
     mountPath: /tmp
-
 volumes:
   - name: tmp
     emptyDir: {}
-
 serviceAccount:
   create: true
   annotations: {}
