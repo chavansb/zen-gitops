@@ -1,8 +1,8 @@
-replicaCount: 2                   # ← 1 → 2 (HA in prod, 2 pods always running)
+replicaCount: 2 # ← 1 → 2 (HA in prod, 2 pods always running)
 fullnameOverride: qc-service
 image:
   repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/qc-service
-  tag: sha-079d470
+  tag: sha-7b02855
   pullPolicy: Always
 service:
   type: ClusterIP
@@ -11,28 +11,28 @@ service:
 ingress:
   enabled: false
   className: nginx
-  host: prod.pharma.internal      # ← dev → prod
+  host: prod.pharma.internal # ← dev → prod
   path: /qc
   pathType: Prefix
 resources:
   requests:
-    cpu: 250m                     # ← more CPU for prod traffic
-    memory: 512Mi                 # ← more memory for prod
+    cpu: 250m # ← more CPU for prod traffic
+    memory: 512Mi # ← more memory for prod
   limits:
-    cpu: 1000m                    # ← 1 full CPU core at peak
-    memory: 1Gi                   # ← 1GB limit
+    cpu: 1000m # ← 1 full CPU core at peak
+    memory: 1Gi # ← 1GB limit
 autoscaling:
-  enabled: true                   # ← ENABLED in prod
-  minReplicas: 2                  # ← always keep 2 pods (HA)
-  maxReplicas: 5                  # ← scale up to 5 at peak
+  enabled: true # ← ENABLED in prod
+  minReplicas: 2 # ← always keep 2 pods (HA)
+  maxReplicas: 5 # ← scale up to 5 at peak
   targetCPUUtilizationPercentage: 70
 podDisruptionBudget:
-  enabled: true                   # ← NEW in prod
-  minAvailable: 1                 # ← during node maintenance keep 1 pod alive
+  enabled: true # ← NEW in prod
+  minAvailable: 1 # ← during node maintenance keep 1 pod alive
 networkPolicy:
-  enabled: true                   # ← NEW in prod (security)
+  enabled: true # ← NEW in prod (security)
   allowFromIngressController: false
-  allowFromApiGateway: true       # ← only api-gateway can call qc-service
+  allowFromApiGateway: true # ← only api-gateway can call qc-service
   ingressControllerNamespace: ingress-nginx
   ingressControllerPodLabels:
     app.kubernetes.io/name: ingress-nginx
@@ -54,8 +54,8 @@ readinessProbe:
   failureThreshold: 3
   successThreshold: 1
 configmap:
-  SPRING_PROFILES_ACTIVE: prod   # ← dev → prod
-  LOG_LEVEL: WARN                # ← DEBUG → WARN (errors only)
+  SPRING_PROFILES_ACTIVE: prod # ← dev → prod
+  LOG_LEVEL: WARN # ← DEBUG → WARN (errors only)
   SERVER_PORT: "8086"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
 volumeMounts:
