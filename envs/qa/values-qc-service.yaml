@@ -2,7 +2,7 @@ replicaCount: 1
 fullnameOverride: qc-service
 image:
   repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/qc-service
-  tag: sha-079d470       # ← CI updates this automatically on QA promotion
+  tag: sha-7b02855 # ← CI updates this automatically on QA promotion
   pullPolicy: Always
 service:
   type: ClusterIP
@@ -11,12 +11,12 @@ service:
 ingress:
   enabled: false
   className: nginx
-  host: qa.pharma.internal        # ← dev → qa
+  host: qa.pharma.internal # ← dev → qa
   path: /qc
   pathType: Prefix
 resources:
   requests:
-    cpu: 150m                     # ← slightly more than dev (QA runs load tests)
+    cpu: 150m # ← slightly more than dev (QA runs load tests)
     memory: 256Mi
   limits:
     cpu: 500m
@@ -43,8 +43,8 @@ readinessProbe:
   failureThreshold: 3
   successThreshold: 1
 configmap:
-  SPRING_PROFILES_ACTIVE: qa     # ← dev → qa
-  LOG_LEVEL: INFO                # ← DEBUG → INFO (less verbose)
+  SPRING_PROFILES_ACTIVE: qa # ← dev → qa
+  LOG_LEVEL: INFO # ← DEBUG → INFO (less verbose)
   SERVER_PORT: "8086"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
 volumeMounts:
