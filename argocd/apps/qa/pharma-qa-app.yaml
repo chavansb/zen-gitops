@@ -18,7 +18,7 @@ spec:
     # This folder contains child Application yamls
     # ArgoCD reads them and creates all 9 service Applications
   destination:
-    server: https://A93BEADC50249F768742E7A35CD4FE46.sk1.us-east-1.eks.amazonaws.com
+    server: https://kubernetes.default.svc
     # app-of-apps Application resource itself lives on DEV cluster
     # BUT child apps deploy TO qa cluster (defined in each child app)
     namespace: argocd          # ← CHANGE from qa to argocd
