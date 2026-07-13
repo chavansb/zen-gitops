@@ -13,7 +13,7 @@ spec:
   project: pharma
 
   source:
-    repoURL: https://github.com/DPP-2026/zen-gitops.git
+    repoURL: https://github.com/chavansb/zen-gitops.git
     targetRevision: HEAD
     path: helm-charts
     helm:
@@ -21,7 +21,7 @@ spec:
         - ../envs/prod/values-manufacturing-service.yaml
 
   destination:
-    server: https://kubernetes.default.svc
+    server: https://C3F2AAF4C9CE06EC05BF8D02793474FB.gr7.us-east-1.eks.amazonaws.com
     namespace: prod
 
   syncPolicy:

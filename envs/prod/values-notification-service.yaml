@@ -1,7 +1,7 @@
 fullnameOverride: notification-service
 
 image:
-  repository: 516209541629.dkr.ecr.us-east-1.amazonaws.com/notification-service
+  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/notification-service
   tag: sha-ef1ccc7
   pullPolicy: Always
 
@@ -69,7 +69,7 @@ configmap:
   SMTP_HOST: "smtp.example.com"
   SMTP_PORT: "587"
   EMAIL_FROM: "noreply-prod@example.com"
-  DB_HOST: pharma-prod-postgres.cs3c424yurej.us-east-1.rds.amazonaws.com
+  DB_HOST: pharma-prod-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
 
 envFrom:
   - secretRef:

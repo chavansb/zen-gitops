@@ -1,0 +1,70 @@
+replicaCount: 2                   # ← 1 → 2 (HA in prod, 2 pods always running)
+fullnameOverride: qc-service
+image:
+  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/qc-service
+  tag: sha-079d470
+  pullPolicy: Always
+service:
+  type: ClusterIP
+  port: 8086
+  targetPort: 8086
+ingress:
+  enabled: false
+  className: nginx
+  host: prod.pharma.internal      # ← dev → prod
+  path: /qc
+  pathType: Prefix
+resources:
+  requests:
+    cpu: 250m                     # ← more CPU for prod traffic
+    memory: 512Mi                 # ← more memory for prod
+  limits:
+    cpu: 1000m                    # ← 1 full CPU core at peak
+    memory: 1Gi                   # ← 1GB limit
+autoscaling:
+  enabled: true                   # ← ENABLED in prod
+  minReplicas: 2                  # ← always keep 2 pods (HA)
+  maxReplicas: 5                  # ← scale up to 5 at peak
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true                   # ← NEW in prod
+  minAvailable: 1                 # ← during node maintenance keep 1 pod alive
+networkPolicy:
+  enabled: true                   # ← NEW in prod (security)
+  allowFromIngressController: false
+  allowFromApiGateway: true       # ← only api-gateway can call qc-service
+  ingressControllerNamespace: ingress-nginx
+  ingressControllerPodLabels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/component: controller
+livenessProbe:
+  path: /actuator/health
+  port: 8086
+  initialDelaySeconds: 50
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+readinessProbe:
+  path: /actuator/health/readiness
+  port: 8086
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+configmap:
+  SPRING_PROFILES_ACTIVE: prod   # ← dev → prod
+  LOG_LEVEL: WARN                # ← DEBUG → WARN (errors only)
+  SERVER_PORT: "8086"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+volumes:
+  - name: tmp
+    emptyDir: {}
+serviceAccount:
+  create: true
+  annotations: {}
+  name: qc-service

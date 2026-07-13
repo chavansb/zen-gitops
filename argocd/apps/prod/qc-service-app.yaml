@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qc-service-prod            # ← dev → prod
+  namespace: argocd
+  labels:
+    env: prod                      # ← dev → prod
+    app: qc-service
+    managed-by: terraform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: pharma
+  source:
+    repoURL: https://github.com/chavansb/zen-gitops.git
+    targetRevision: HEAD
+    path: helm-charts
+    helm:
+      valueFiles:
+        - ../envs/prod/values-qc-service.yaml  # ← dev → prod
+
+  destination:
+    server: https://C3F2AAF4C9CE06EC05BF8D02793474FB.gr7.us-east-1.eks.amazonaws.com  # ← NOT kubernetes.default.svc!
+    # Get it after terraform apply prod:
+    # aws eks describe-cluster --name pharma-prod-cluster
+    #   --query 'cluster.endpoint' --output text
+    namespace: prod                # ← dev → prod
+
+  syncPolicy:
+    # NO automated block in prod!
+    # Prod requires MANUAL sync in ArgoCD UI
+    # Engineer reviews diff → clicks Sync → deploys
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3                     # ← 5 → 3 (fail faster in prod, alert humans)
+      backoff:
+        duration: 10s              # ← 5s → 10s (wait longer between retries)
+        factor: 2
+        maxDuration: 5m            # ← 3m → 5m
+
+  ignoreDifferences:
+    # HPA controls replica count in prod
+    # Without this ArgoCD would keep reverting replicas to values file value
+    # fighting with HPA which scales up/down dynamically
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  revisionHistoryLimit: 10

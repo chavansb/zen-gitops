@@ -5,22 +5,24 @@ metadata:
   namespace: argocd
   labels:
     env: qa
+    type: app-of-apps          # ← ADD this label
     managed-by: terraform
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: pharma
-
   source:
-    # Replace 'DPP-2026' with your GitHub username after forking zen-gitops
-    repoURL: https://github.com/DPP-2026/zen-gitops.git
+    repoURL: https://github.com/chavansb/zen-gitops.git
     targetRevision: HEAD
-    path: envs/qa
-
+    path: argocd/apps/qa       # ← CHANGE from envs/qa to argocd/apps/qa
+    # This folder contains child Application yamls
+    # ArgoCD reads them and creates all 9 service Applications
   destination:
-    server: https://kubernetes.default.svc
-    namespace: qa
-
+    server: https://A93BEADC50249F768742E7A35CD4FE46.sk1.us-east-1.eks.amazonaws.com
+    # app-of-apps Application resource itself lives on DEV cluster
+    # BUT child apps deploy TO qa cluster (defined in each child app)
+    namespace: argocd          # ← CHANGE from qa to argocd
+    # Application resources must live in argocd namespace
   syncPolicy:
     automated:
       prune: true
@@ -36,5 +38,4 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-
   revisionHistoryLimit: 10

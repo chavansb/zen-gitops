@@ -1,7 +1,7 @@
 fullnameOverride: supplier-service
 
 image:
-  repository: 516209541629.dkr.ecr.us-east-1.amazonaws.com/supplier-service
+  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/supplier-service
   tag: sha-ef1ccc7
   pullPolicy: Always
 
@@ -64,7 +64,7 @@ readinessProbe:
 
 configmap:
   SPRING_PROFILES_ACTIVE: prod
-  DB_HOST: <RDS_ENDPOINT>
+  DB_HOST: pharma-prod-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
   LOG_LEVEL: WARN
   SERVER_PORT: "8084"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"

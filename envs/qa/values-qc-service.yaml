@@ -1,22 +1,22 @@
 replicaCount: 1
-fullnameOverride: auth-service
+fullnameOverride: qc-service
 image:
-  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/auth-service
-  tag: sha-2a78e08
+  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/qc-service
+  tag: sha-079d470       # ← CI updates this automatically on QA promotion
   pullPolicy: Always
 service:
   type: ClusterIP
-  port: 8081
-  targetPort: 8081
+  port: 8086
+  targetPort: 8086
 ingress:
   enabled: false
   className: nginx
-  host: qa.pharma.internal
-  path: /auth
+  host: qa.pharma.internal        # ← dev → qa
+  path: /qc
   pathType: Prefix
 resources:
   requests:
-    cpu: 100m
+    cpu: 150m                     # ← slightly more than dev (QA runs load tests)
     memory: 256Mi
   limits:
     cpu: 500m
@@ -28,32 +28,25 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
 livenessProbe:
   path: /actuator/health
-  port: 8081
-  initialDelaySeconds: 60
-  periodSeconds: 15
+  port: 8086
+  initialDelaySeconds: 50
+  periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
   successThreshold: 1
 readinessProbe:
   path: /actuator/health/readiness
-  port: 8081
+  port: 8086
   initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
   successThreshold: 1
 configmap:
-  SPRING_PROFILES_ACTIVE: qa
-  DB_HOST: pharma-qa-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
-  LOG_LEVEL: DEBUG
-  SERVER_PORT: "8081"
-  TOKEN_EXPIRATION_MS: "86400000"
+  SPRING_PROFILES_ACTIVE: qa     # ← dev → qa
+  LOG_LEVEL: INFO                # ← DEBUG → INFO (less verbose)
+  SERVER_PORT: "8086"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
-envFrom:
-  - secretRef:
-      name: db-credentials
-  - secretRef:
-      name: jwt-secret
 volumeMounts:
   - name: tmp
     mountPath: /tmp
@@ -63,4 +56,4 @@ volumes:
 serviceAccount:
   create: true
   annotations: {}
-  name: auth-service
+  name: qc-service

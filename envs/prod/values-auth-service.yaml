@@ -1,6 +1,6 @@
 fullnameOverride: auth-service
 image:
-  repository: 516209541629.dkr.ecr.us-east-1.amazonaws.com/auth-service
+  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/auth-service
   tag: sha-2a78e08
   pullPolicy: Always
 service:
@@ -54,8 +54,8 @@ readinessProbe:
   successThreshold: 1
 configmap:
   SPRING_PROFILES_ACTIVE: prod
-  DB_HOST: pharma-prod-postgres.cs3c424yurej.us-east-1.rds.amazonaws.com
-  LOG_LEVEL: DEBUG
+  DB_HOST: pharma-prod-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
+  LOG_LEVEL: WARN
   SERVER_PORT: "8081"
   TOKEN_EXPIRATION_MS: "86400000"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"

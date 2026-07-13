@@ -3,7 +3,7 @@ replicaCount: 1
 fullnameOverride: inventory-service
 
 image:
-  repository: 516209541629.dkr.ecr.us-east-1.amazonaws.com/inventory-service
+  repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/inventory-service
   tag: sha-ef1ccc7
   pullPolicy: Always
 
@@ -53,7 +53,7 @@ readinessProbe:
 
 configmap:
   SPRING_PROFILES_ACTIVE: qa
-  DB_HOST: <RDS_ENDPOINT>
+  DB_HOST: pharma-qa-postgres.cwbigiu26p40.us-east-1.rds.amazonaws.com
   LOG_LEVEL: INFO
   SERVER_PORT: "8083"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"

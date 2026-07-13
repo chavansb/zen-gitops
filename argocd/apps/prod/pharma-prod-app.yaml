@@ -5,23 +5,25 @@ metadata:
   namespace: argocd
   labels:
     env: prod
+    type: app-of-apps          # ← ADD this label
     managed-by: terraform
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: pharma
-
   source:
-    # Replace 'DPP-2026' with your GitHub username after forking zen-gitops
-    repoURL: https://github.com/DPP-2026/zen-gitops.git
+    repoURL: https://github.com/chavansb/zen-gitops.git
     targetRevision: HEAD
-    path: envs/prod
-
+    path: argocd/apps/prod     # ← CHANGE from envs/prod to argocd/apps/prod
+    # This folder contains child Application yamls
+    # ArgoCD reads them and creates all 9 service Applications
   destination:
-    server: https://kubernetes.default.svc
-    namespace: prod
-
+    server: https://C3F2AAF4C9CE06EC05BF8D02793474FB.gr7.us-east-1.eks.amazonaws.com
+    # app-of-apps lives on DEV cluster
+    # child apps deploy TO prod cluster (defined in each child app)
+    namespace: argocd          # ← CHANGE from prod to argocd
   syncPolicy:
+    # NO automated block — prod is MANUAL sync only
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
@@ -32,11 +34,9 @@ spec:
         duration: 10s
         factor: 2
         maxDuration: 5m
-
   ignoreDifferences:
     - group: apps
       kind: Deployment
       jsonPointers:
         - /spec/replicas
-
   revisionHistoryLimit: 10
