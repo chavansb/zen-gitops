@@ -80,40 +80,33 @@ spec:
             - name: ELASTIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.elasticsearch.apiKeySecret }}
-                  key: {{ .Values.elasticsearch.apiKeySecretKey }}
+                  name: {{ .Values.elasticsearch.credentialsSecret }}
+                  key: api_key
 
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
           volumeMounts:
-            # Fluent Bit config files
             - name: config
               mountPath: /fluent-bit/etc/
-
-            # Node's container logs — READ ONLY
-            # /var/log/containers/ has symlinks to actual log files
             - name: varlog
               mountPath: /var/log
-
-            # Actual container log files (Docker runtime)
             - name: varlibdockercontainers
               mountPath: /var/lib/docker/containers
               readOnly: true
+            - name: fluent-bit-db      # ← ADD THIS
+              mountPath: /var/lib/fluent-bit
 
-      volumes:
-        # ConfigMap with fluent-bit.conf + service_name.lua + parsers
-        - name: config
-          configMap:
-            name: fluent-bit-config
-
-        # Node's /var/log directory (hostPath)
-        # Fluent Bit reads logs from the physical node filesystem
-        - name: varlog
-          hostPath:
-            path: /var/log
-
-        # Docker container log files
-        - name: varlibdockercontainers
-          hostPath:
-            path: /var/lib/docker/containers
+          volumes:
+            - name: config
+              configMap:
+                name: fluent-bit-config
+            - name: varlog
+              hostPath:
+                path: /var/log
+            - name: varlibdockercontainers
+              hostPath:
+                path: /var/lib/docker/containers
+            - name: fluent-bit-db      # ← ADD THIS
+              hostPath:
+                path: /var/lib/fluent-bit

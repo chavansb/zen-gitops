@@ -1,16 +1,22 @@
-# ─── values.yaml ─────────────────────────────────────────────────────────────
-# Default values for fluent-bit-pharma chart
-# Override per environment in envs/dev/values-fluent-bit.yaml
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Which namespace to deploy Fluent Bit into
-# and which namespace logs to collect
-namespace: dev
-
 image:
   repository: fluent/fluent-bit
-  tag: "3.0"
+  tag: latest
   pullPolicy: Always
+
+namespace: dev
+
+fluentbit:
+  flush: 5
+  logLevel: info
+  memBufLimit: 50MB
+  db: /var/lib/fluent-bit/flb_kube.db
+  filterNamespace: dev
+
+elasticsearch:
+  host: ""
+  port: 443
+  tls: true
+  credentialsSecret: fluent-bit-elastic-credentials
 
 resources:
   requests:
@@ -18,34 +24,13 @@ resources:
     memory: 64Mi
   limits:
     cpu: 200m
-    memory: 128Mi
+    memory: 256Mi
 
-# Tolerations allow Fluent Bit to run on ALL nodes
-# including nodes with taints (e.g. control-plane nodes)
 tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
   - operator: Exists
-
-# Elasticsearch connection settings
-# Override host in env-specific values file
-elasticsearch:
-  host: ""
-  port: 443
-  tls: On
-  # API key comes from Kubernetes secret (not here)
-  # kubectl create secret generic fluent-bit-elastic-credentials
-  apiKeySecret: fluent-bit-elastic-credentials
-  apiKeySecretKey: api_key
-
-# Fluent Bit service config
-service:
-  httpServer: On
-  httpListen: "0.0.0.0"
-  httpPort: 2020
-  flushInterval: 1
-  logLevel: info
-
-# Log collection settings
-input:
-  memBufLimit: 5MB
-  skipLongLines: On
-  refreshInterval: 10
+    effect: NoExecute
+  - operator: Exists
+    effect: NoSchedule
