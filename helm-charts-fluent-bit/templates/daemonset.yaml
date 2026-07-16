@@ -87,18 +87,16 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
 
           volumeMounts:
-            - name: config
+            - name: fluent-bit-config    # ← must match volumes below
               mountPath: /fluent-bit/etc/
             - name: varlog
               mountPath: /var/log
             - name: varlibdockercontainers
               mountPath: /var/lib/docker/containers
               readOnly: true
-            - name: fluent-bit-db      # ← ADD THIS
-              mountPath: /var/lib/fluent-bit
 
           volumes:
-            - name: config
+            - name: fluent-bit-config    # ← must match volumeMounts above
               configMap:
                 name: fluent-bit-config
             - name: varlog
@@ -107,6 +105,3 @@ spec:
             - name: varlibdockercontainers
               hostPath:
                 path: /var/lib/docker/containers
-            - name: fluent-bit-db      # ← ADD THIS
-              hostPath:
-                path: /var/lib/fluent-bit
