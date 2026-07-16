@@ -9,7 +9,7 @@ fluentbit:
   flush: 5
   logLevel: info
   memBufLimit: 50MB
-  db: /var/lib/fluent-bit/flb_kube.db
+  db: /var/log/flb_kube.db
   filterNamespace: dev
 
 elasticsearch:
