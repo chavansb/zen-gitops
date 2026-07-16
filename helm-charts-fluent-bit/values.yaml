@@ -1,0 +1,51 @@
+# ─── values.yaml ─────────────────────────────────────────────────────────────
+# Default values for fluent-bit-pharma chart
+# Override per environment in envs/dev/values-fluent-bit.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Which namespace to deploy Fluent Bit into
+# and which namespace logs to collect
+namespace: dev
+
+image:
+  repository: fluent/fluent-bit
+  tag: "3.0"
+  pullPolicy: Always
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# Tolerations allow Fluent Bit to run on ALL nodes
+# including nodes with taints (e.g. control-plane nodes)
+tolerations:
+  - operator: Exists
+
+# Elasticsearch connection settings
+# Override host in env-specific values file
+elasticsearch:
+  host: ""
+  port: 443
+  tls: On
+  # API key comes from Kubernetes secret (not here)
+  # kubectl create secret generic fluent-bit-elastic-credentials
+  apiKeySecret: fluent-bit-elastic-credentials
+  apiKeySecretKey: api_key
+
+# Fluent Bit service config
+service:
+  httpServer: On
+  httpListen: "0.0.0.0"
+  httpPort: 2020
+  flushInterval: 1
+  logLevel: info
+
+# Log collection settings
+input:
+  memBufLimit: 5MB
+  skipLongLines: On
+  refreshInterval: 10

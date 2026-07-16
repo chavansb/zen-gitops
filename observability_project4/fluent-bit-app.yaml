@@ -1,0 +1,49 @@
+# ─── fluent-bit-app.yaml ─────────────────────────────────────────────────────
+# ArgoCD Application for Fluent Bit
+# Tells ArgoCD to deploy helm-charts-fluent-bit/ using dev values file
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fluent-bit-dev
+  namespace: argocd
+  labels:
+    env: dev
+    app: fluent-bit
+    component: logging
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: pharma
+
+  source:
+    repoURL: https://github.com/chavansb/zen-gitops.git
+    targetRevision: HEAD
+    path: helm-charts-fluent-bit
+    helm:
+      valueFiles:
+        - ../envs/dev/values-fluent-bit.yaml
+        # Path relative to helm-charts-fluent-bit/
+        # ../envs/dev/ → goes up to repo root → into envs/dev/
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10

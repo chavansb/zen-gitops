@@ -1,0 +1,120 @@
+# ─── daemonset.yaml ──────────────────────────────────────────────────────────
+# DaemonSet ensures ONE Fluent Bit pod runs on EVERY node
+# Each pod reads logs from its own node's /var/log/containers/
+#
+# WHY DaemonSet not Deployment?
+# Deployment: runs N pods on any nodes (not guaranteed coverage)
+# DaemonSet:  runs exactly 1 pod per node → all nodes covered
+#             when new node joins → Fluent Bit pod auto-created
+#             when node leaves → Fluent Bit pod auto-removed
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: fluent-bit
+    env: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: fluent-bit
+
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+        env: {{ .Values.namespace }}
+      annotations:
+        # Force pod restart when ConfigMap changes
+        # Without this: config changes don't restart Fluent Bit pods
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+
+    spec:
+      serviceAccountName: fluent-bit
+      # Tolerations allow Fluent Bit to run on ALL nodes
+      # even nodes with taints (spot instances, special nodes)
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+
+      # Host network gives access to node's network interfaces
+      # Needed to read node-level logs
+      hostNetwork: false
+
+      containers:
+        - name: fluent-bit
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          ports:
+            - name: metrics
+              containerPort: 2020
+              protocol: TCP
+            - name: health
+              containerPort: 2020
+              protocol: TCP
+
+          # Liveness probe — restart if Fluent Bit is unhealthy
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2020
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # Readiness probe — don't send traffic until ready
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2020
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          # Environment variables
+          env:
+            # ELASTIC_API_KEY comes from Kubernetes secret
+            # kubectl create secret generic fluent-bit-elastic-credentials
+            # --from-literal=api_key='YOUR_BASE64_KEY'
+            - name: ELASTIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.elasticsearch.apiKeySecret }}
+                  key: {{ .Values.elasticsearch.apiKeySecretKey }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          volumeMounts:
+            # Fluent Bit config files
+            - name: config
+              mountPath: /fluent-bit/etc/conf
+
+            # Node's container logs — READ ONLY
+            # /var/log/containers/ has symlinks to actual log files
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+
+            # Actual container log files (Docker runtime)
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+
+      volumes:
+        # ConfigMap with fluent-bit.conf + service_name.lua + parsers
+        - name: config
+          configMap:
+            name: fluent-bit-config
+
+        # Node's /var/log directory (hostPath)
+        # Fluent Bit reads logs from the physical node filesystem
+        - name: varlog
+          hostPath:
+            path: /var/log
+
+        # Docker container log files
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers

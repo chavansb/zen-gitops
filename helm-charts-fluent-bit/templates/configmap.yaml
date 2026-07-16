@@ -1,0 +1,178 @@
+# ─── configmap.yaml ──────────────────────────────────────────────────────────
+# Contains:
+#   1. fluent-bit.conf  → main pipeline config
+#   2. service_name.lua → Lua script to derive service name from pod name
+#   3. custom_parsers.conf → CRI parser for containerd logs
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: fluent-bit
+    env: {{ .Values.namespace }}
+data:
+
+  fluent-bit.conf: |
+    # ── SERVICE ────────────────────────────────────────────────────────────
+    # Global Fluent Bit settings
+    [SERVICE]
+        Daemon            Off
+        Flush             {{ .Values.service.flushInterval }}
+        Log_Level         {{ .Values.service.logLevel }}
+        HTTP_Server       {{ .Values.service.httpServer }}
+        HTTP_Listen       {{ .Values.service.httpListen }}
+        HTTP_Port         {{ .Values.service.httpPort }}
+        Health_Check      On
+        # Custom parsers file location
+        Parsers_File      /fluent-bit/etc/conf/custom_parsers.conf
+
+    # ── INPUT ──────────────────────────────────────────────────────────────
+    # Read ALL container logs from the EKS node filesystem
+    # One Fluent Bit pod per node reads ALL container logs on that node
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        # Exclude Fluent Bit own logs to prevent infinite loop
+        Exclude_Path      /var/log/containers/*fluent-bit*.log
+        # Handle both Docker and CRI (containerd) log formats
+        multiline.parser  docker, cri
+        Tag               kube.*
+        Mem_Buf_Limit     {{ .Values.input.memBufLimit }}
+        Skip_Long_Lines   {{ .Values.input.skipLongLines }}
+        Refresh_Interval  {{ .Values.input.refreshInterval }}
+        # Track file read position → survives pod restarts
+        # Prevents duplicate logs or missing logs on restart
+        DB                /var/log/fluent-bit-kube.db
+        DB.Sync           Normal
+
+    # ── FILTER 1: Kubernetes metadata enrichment ───────────────────────────
+    # Calls Kubernetes API to add metadata to each log record:
+    #   kubernetes.pod_name, kubernetes.namespace_name
+    #   kubernetes.container_name, kubernetes.labels
+    [FILTER]
+        Name              kubernetes
+        Match             kube.*
+        Kube_URL          https://kubernetes.default.svc:443
+        Kube_CA_File      /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File   /var/run/secrets/kubernetes.io/serviceaccount/token
+        Merge_Log         On
+        Keep_Log          Off
+        K8S-Logging.Parser On
+        K8S-Logging.Exclude On
+
+    # ── FILTER 2: Namespace filter ─────────────────────────────────────────
+    # Only keep logs from the target namespace (dev)
+    # Drops logs from kube-system, argocd, ingress-nginx etc
+    [FILTER]
+        Name              grep
+        Match             kube.*
+        Regex             $kubernetes['namespace_name'] {{ .Values.namespace }}
+
+    # ── FILTER 3: Lua service name extraction ──────────────────────────────
+    # Runs service_name.lua on each log record
+    # Extracts service name from pod name:
+    #   auth-service-674ff99478-5nz42 → auth-service
+    #   api-gateway-85bf7bddc4-c9rgd  → api-gateway
+    [FILTER]
+        Name              lua
+        Match             kube.*
+        script            /fluent-bit/etc/conf/service_name.lua
+        call              set_service_name
+
+    # ── OUTPUT: Elasticsearch on Elastic Cloud ─────────────────────────────
+    # Ships logs to your Elastic Cloud deployment over TLS
+    # Uses API key authentication (from Kubernetes secret)
+    # Creates indices: <service-name>-YYYY.MM.DD
+    [OUTPUT]
+        Name              es
+        Match             kube.*
+        Host              {{ .Values.elasticsearch.host }}
+        Port              {{ .Values.elasticsearch.port }}
+        TLS               {{ .Values.elasticsearch.tls }}
+        HTTP_User         elastic
+        HTTP_Passwd       ${ELASTIC_API_KEY}
+        Logstash_Format   On
+        Logstash_Prefix   _service_name
+        Replace_Dots      On
+        Suppress_Type_Name On
+        Retry_Limit       5
+        Trace_Error       On
+
+  service_name.lua: |
+    -- ── service_name.lua ─────────────────────────────────────────────────
+    -- Extracts a clean service name from the Kubernetes pod name
+    --
+    -- Pod name format (Deployment pods):
+    --   <service-name>-<replica-set-hash>-<pod-hash>
+    --   Example: auth-service-674ff99478-5nz42
+    --
+    -- Extracted service name: auth-service
+    --
+    -- The _service_name field is used by Elasticsearch as index prefix:
+    --   auth-service-2026.07.13
+    --   api-gateway-2026.07.13
+    -- ─────────────────────────────────────────────────────────────────────
+    function set_service_name(tag, timestamp, record)
+        local pod_name = ""
+        local service_name = "unknown-service"
+
+        -- Get pod name from kubernetes metadata
+        if record["kubernetes"] and record["kubernetes"]["pod_name"] then
+            pod_name = record["kubernetes"]["pod_name"]
+        end
+
+        -- Pattern 1: standard deployment pod
+        -- auth-service-674ff99478-5nz42
+        -- ↑ capture this ↑
+        local s = pod_name:match("^(.+)%-%a[%a%d]+%-%a[%a%d]+$")
+        if s then
+            service_name = s
+        else
+            -- Pattern 2: simpler format
+            -- auth-service-5nz42
+            local s2 = pod_name:match("^(.+)%-%a[%a%d]+$")
+            if s2 then
+                service_name = s2
+            else
+                -- Fallback: use pod name as-is
+                service_name = pod_name
+            end
+        end
+
+        record["_service_name"] = service_name
+        return 1, timestamp, record
+    end
+
+  custom_parsers.conf: |
+    # ── CRI Parser ─────────────────────────────────────────────────────────
+    # CRI (Container Runtime Interface) is used by containerd
+    # which is the default runtime in EKS 1.24+
+    # Log format: <timestamp> <stream> <flags> <log>
+    [PARSER]
+        Name              cri
+        Format            regex
+        Regex             ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key          time
+        Time_Format       %Y-%m-%dT%H:%M:%S.%L%z
+        Time_Keep         Off
+
+    # ── JSON Parser ────────────────────────────────────────────────────────
+    # For structured JSON logs from Spring Boot + Node.js services
+    [PARSER]
+        Name              json
+        Format            json
+        Time_Key          time
+        Time_Format       %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep         Off
+
+    # ── Docker Parser ──────────────────────────────────────────────────────
+    # For Docker runtime log format (older EKS versions)
+    [PARSER]
+        Name              docker
+        Format            json
+        Time_Key          time
+        Time_Format       %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep         Off
+        Decode_Field_As   escaped_utf8 log
