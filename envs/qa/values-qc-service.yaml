@@ -2,7 +2,7 @@ replicaCount: 1
 fullnameOverride: qc-service
 image:
   repository: 901099689329.dkr.ecr.us-east-1.amazonaws.com/qc-service
-  tag: sha-7b02855 # ← CI updates this automatically on QA promotion
+  tag: sha-8e57d84 # ← CI updates this automatically on QA promotion
   pullPolicy: Always
 service:
   type: ClusterIP
