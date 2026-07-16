@@ -95,7 +95,6 @@ spec:
             # /var/log/containers/ has symlinks to actual log files
             - name: varlog
               mountPath: /var/log
-              readOnly: true
 
             # Actual container log files (Docker runtime)
             - name: varlibdockercontainers
