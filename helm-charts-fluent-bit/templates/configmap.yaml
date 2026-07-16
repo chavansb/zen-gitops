@@ -68,7 +68,7 @@ data:
     [FILTER]
         Name              grep
         Match             kube.*
-        Regex             $kubernetes['namespace_name'] {{ .Values.namespace }}
+        Regex             kubernetes_namespace_name {{ .Values.namespace }}
 
     # ── FILTER 3: Lua service name extraction ──────────────────────────────
     # Runs service_name.lua on each log record
