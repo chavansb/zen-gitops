@@ -1,0 +1,33 @@
+# ─── fluent-bit-podmonitor.yaml ──────────────────────────────────────────────
+# PodMonitor tells Prometheus to scrape Fluent Bit metrics
+# Fluent Bit exposes metrics on port 2020 at /api/v1/metrics/prometheus
+#
+# Metrics available:
+#   fluentbit_input_records_total    → logs received per input
+#   fluentbit_output_proc_bytes_total → bytes sent to Elasticsearch
+#   fluentbit_output_retries_total   → failed/retried sends
+#   fluentbit_filter_records_total   → records processed by filters
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: fluent-bit
+  namespace: monitoring
+  labels:
+    app: fluent-bit
+    release: prometheus
+spec:
+  # Watch pods in dev namespace
+  namespaceSelector:
+    matchNames:
+      - dev
+  # Match Fluent Bit pods by label
+  selector:
+    matchLabels:
+      app: fluent-bit
+  # Scrape config
+  podMetricsEndpoints:
+    - port: metrics
+      path: /api/v1/metrics/prometheus
+      interval: 30s
+      scrapeTimeout: 10s

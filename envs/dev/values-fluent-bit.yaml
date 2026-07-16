@@ -1,0 +1,48 @@
+# ─── values-fluent-bit.yaml (dev) ────────────────────────────────────────────
+# Dev-specific overrides for fluent-bit-pharma Helm chart
+# Merged with helm-charts-fluent-bit/values.yaml at deploy time
+# ─────────────────────────────────────────────────────────────────────────────
+
+namespace: dev
+
+image:
+  repository: fluent/fluent-bit
+  tag: "3.0"
+  pullPolicy: Always
+
+# ── Elasticsearch Connection ──────────────────────────────────────────────────
+# Replace with YOUR Elastic Cloud endpoint after creating deployment
+# Format: <deployment-name>.es.<region>.gcp.elastic.cloud
+elasticsearch:
+  host: my-elasticsearch-project-f709b6.es.us-central1.gcp.elastic.cloud    # ← replace after creating Elastic Cloud
+  port: 443
+  tls: On
+  apiKeySecret: fluent-bit-elastic-credentials
+  apiKeySecretKey: api_key
+
+# ── Resources (lightweight for dev) ──────────────────────────────────────────
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# ── Fluent Bit Service Config ─────────────────────────────────────────────────
+service:
+  httpServer: On
+  httpListen: "0.0.0.0"
+  httpPort: 2020
+  flushInterval: 1       # flush every 1 second (good for dev, real-time logs)
+  logLevel: info
+
+# ── Input Config ──────────────────────────────────────────────────────────────
+input:
+  memBufLimit: 5MB
+  skipLongLines: On
+  refreshInterval: 10
+
+# ── Tolerations ───────────────────────────────────────────────────────────────
+tolerations:
+  - operator: Exists

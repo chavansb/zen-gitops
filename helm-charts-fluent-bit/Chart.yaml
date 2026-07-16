@@ -1,0 +1,21 @@
+# ─── Chart.yaml ──────────────────────────────────────────────────────────────
+# Identity card for the Fluent Bit Helm chart
+# This is a WRAPPER chart — it configures Fluent Bit for zen-pharma
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v2
+name: fluent-bit-pharma
+description: >
+  Fluent Bit DaemonSet for Zen Pharma log collection.
+  Tails /var/log/containers/*.log on every EKS node,
+  enriches with Kubernetes metadata, derives service name
+  via Lua script, and ships to Elastic Cloud over TLS.
+type: application
+version: 0.1.0
+appVersion: "3.0.0"
+keywords:
+  - logging
+  - fluent-bit
+  - elasticsearch
+  - pharma
+maintainers:
+  - name: chavansb
