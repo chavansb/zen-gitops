@@ -89,7 +89,7 @@ spec:
           volumeMounts:
             # Fluent Bit config files
             - name: config
-              mountPath: /fluent-bit/etc/conf
+              mountPath: /fluent-bit/etc/
 
             # Node's container logs — READ ONLY
             # /var/log/containers/ has symlinks to actual log files

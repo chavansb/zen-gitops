@@ -26,7 +26,7 @@ data:
         HTTP_Port         {{ .Values.service.httpPort }}
         Health_Check      On
         # Custom parsers file location
-        Parsers_File      /fluent-bit/etc/conf/custom_parsers.conf
+        Parsers_File      /fluent-bit/etc/custom_parsers.conf
 
     # ── INPUT ──────────────────────────────────────────────────────────────
     # Read ALL container logs from the EKS node filesystem
@@ -78,7 +78,7 @@ data:
     [FILTER]
         Name              lua
         Match             kube.*
-        script            /fluent-bit/etc/conf/service_name.lua
+        script            /fluent-bit/etc/service_name.lua
         call              set_service_name
 
     # ── OUTPUT: Elasticsearch on Elastic Cloud ─────────────────────────────
