@@ -65,10 +65,11 @@ data:
     # ── FILTER 2: Namespace filter ─────────────────────────────────────────
     # Only keep logs from the target namespace (dev)
     # Drops logs from kube-system, argocd, ingress-nginx etc
-    [FILTER]
-        Name              grep
-        Match             kube.*
-        Regex             $kubernetes['namespace_name'] {{ .Values.namespace }}
+    # Namespace filter disabled - filter in Kibana
+    # [FILTER]
+    #     Name              grep
+    #     Match             kube.*
+    #     Regex             kubernetes_namespace_name {{ .Values.namespace }}
 
     # ── FILTER 3: Lua service name extraction ──────────────────────────────
     # Runs service_name.lua on each log record
@@ -86,19 +87,19 @@ data:
     # Uses API key authentication (from Kubernetes secret)
     # Creates indices: <service-name>-YYYY.MM.DD
     [OUTPUT]
-        Name              es
-        Match             kube.*
-        Host              {{ .Values.elasticsearch.host }}
-        Port              {{ .Values.elasticsearch.port }}
-        TLS               {{ .Values.elasticsearch.tls }}
-        HTTP_User         elastic
-        HTTP_Passwd       ${ELASTIC_API_KEY}
-        Logstash_Format   On
-        Logstash_Prefix   _service_name
-        Replace_Dots      On
+        Name               es
+        Match              kube.*
+        Host               {{ .Values.elasticsearch.host }}
+        Port               443
+        TLS                On
+        TLS.Verify         Off
         Suppress_Type_Name On
-        Retry_Limit       5
-        Trace_Error       On
+        Logstash_Format    On
+        Logstash_Prefix    pharma-dev
+        Replace_Dots       On
+        Retry_Limit        5
+        Trace_Error        On
+        http_api_key       ${ELASTIC_API_KEY}
 
   service_name.lua: |
     -- ── service_name.lua ─────────────────────────────────────────────────
