@@ -53,6 +53,11 @@ configmap:
   NOTIFICATION_URL: "http://notification-service:3000"
   QC_SERVICE_URL: "http://qc-service:8086"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.monitoring:4318
+  OTEL_SERVICE_NAME: auth-service
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
 envFrom:
   - secretRef:
       name: db-credentials

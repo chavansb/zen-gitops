@@ -49,6 +49,11 @@ configmap:
   SERVER_PORT: "8081"
   TOKEN_EXPIRATION_MS: "86400000"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.monitoring:4318
+  OTEL_SERVICE_NAME: auth-service
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
 envFrom:
   - secretRef:
       name: db-credentials
