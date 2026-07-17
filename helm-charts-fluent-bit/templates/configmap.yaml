@@ -1,86 +1,62 @@
-# ─── configmap.yaml ──────────────────────────────────────────────────────────
-# Contains:
-#   1. fluent-bit.conf  → main pipeline config
-#   2. service_name.lua → Lua script to derive service name from pod name
-#   3. custom_parsers.conf → CRI parser for containerd logs
-# ─────────────────────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: fluent-bit-config
+  name: {{ include "fluent-bit.name" . }}-config
   namespace: {{ .Values.namespace }}
   labels:
-    app: fluent-bit
-    env: {{ .Values.namespace }}
+    {{- include "fluent-bit.labels" . | nindent 4 }}
 data:
-
   fluent-bit.conf: |
-    # ── SERVICE ────────────────────────────────────────────────────────────
-    # Global Fluent Bit settings
     [SERVICE]
-        Daemon            Off
-        Flush             {{ .Values.fluentbit.flush }}
-        Log_Level         {{ .Values.fluentbit.logLevel }}
-        HTTP_Server       On
-        HTTP_Listen       0.0.0.0
-        HTTP_Port         2020
-        Health_Check      On
-        Parsers_File      /fluent-bit/etc/custom_parsers.conf
+        Daemon          Off
+        Flush           {{ .Values.fluentbit.flush }}
+        Log_Level       {{ .Values.fluentbit.logLevel }}
+        Parsers_File    parsers.conf
+        HTTP_Server     On
+        HTTP_Listen     0.0.0.0
+        HTTP_Port       2020
+        Health_Check    On
 
-    # ── INPUT ──────────────────────────────────────────────────────────────
-    # Read ALL container logs from the EKS node filesystem
-    # One Fluent Bit pod per node reads ALL container logs on that node
     [INPUT]
         Name              tail
-        Path              /var/log/containers/*.log
-        Exclude_Path      /var/log/containers/*fluent-bit*.log
-        multiline.parser  docker, cri
         Tag               kube.*
+        Path              /var/log/containers/*.log
+        multiline.parser  docker, cri
+        DB                {{ .Values.fluentbit.db }}
         Mem_Buf_Limit     {{ .Values.fluentbit.memBufLimit }}
         Skip_Long_Lines   On
         Refresh_Interval  10
-        DB                {{ .Values.fluentbit.db }}
-        DB.Sync           Normal
 
-    # ── FILTER 1: Kubernetes metadata enrichment ───────────────────────────
-    # Calls Kubernetes API to add metadata to each log record:
-    #   kubernetes.pod_name, kubernetes.namespace_name
-    #   kubernetes.container_name, kubernetes.labels
     [FILTER]
-        Name              kubernetes
-        Match             kube.*
-        Kube_URL          https://kubernetes.default.svc:443
-        Kube_CA_File      /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-        Kube_Token_File   /var/run/secrets/kubernetes.io/serviceaccount/token
-        Merge_Log         On
-        Keep_Log          Off
-        K8S-Logging.Parser On
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
         K8S-Logging.Exclude On
+        Annotations         Off
+        Labels              On
 
-    # ── FILTER 2: Namespace filter ─────────────────────────────────────────
-    # Only keep logs from the target namespace (dev)
-    # Drops logs from kube-system, argocd, ingress-nginx etc
-    # Namespace filter disabled - filter in Kibana
-    # [FILTER]
-    #     Name              grep
-    #     Match             kube.*
-    #     Regex             kubernetes_namespace_name {{ .Values.namespace }}
-
-    # ── FILTER 3: Lua service name extraction ──────────────────────────────
-    # Runs service_name.lua on each log record
-    # Extracts service name from pod name:
-    #   auth-service-674ff99478-5nz42 → auth-service
-    #   api-gateway-85bf7bddc4-c9rgd  → api-gateway
     [FILTER]
-        Name              lua
-        Match             kube.*
-        script            /fluent-bit/etc/service_name.lua
-        call              set_service_name
+        Name    grep
+        Match   kube.*
+        Regex   $kubernetes['namespace_name'] {{ .Values.fluentbit.filterNamespace }}
 
-    # ── OUTPUT: Elasticsearch on Elastic Cloud ─────────────────────────────
-    # Ships logs to your Elastic Cloud deployment over TLS
-    # Uses API key authentication (from Kubernetes secret)
-    # Creates indices: <service-name>-YYYY.MM.DD
+    [FILTER]
+        Name    grep
+        Match   kube.*
+        Exclude $kubernetes['container_name'] fluent-bit
+
+    [FILTER]
+        Name    lua
+        Match   kube.*
+        script  /fluent-bit/etc/service_index.lua
+        call    set_service_index
+
     [OUTPUT]
         Name                 es
         Match                kube.*
@@ -88,7 +64,7 @@ data:
         Port                 {{ .Values.elasticsearch.port }}
         TLS                  {{ if .Values.elasticsearch.tls }}On{{ else }}Off{{ end }}
         TLS.Verify           On
-        cloud_auth           elastic:${ELASTIC_API_KEY}
+        http_api_key         ${ELASTIC_API_KEY}
         Logstash_Format      On
         Logstash_Prefix_Key  _service_name
         Logstash_Prefix      {{ .Values.fluentbit.filterNamespace }}-service
@@ -97,79 +73,51 @@ data:
         Suppress_Type_Name   On
         Replace_Dots         On
 
-  service_name.lua: |
-    -- ── service_name.lua ─────────────────────────────────────────────────
-    -- Extracts a clean service name from the Kubernetes pod name
-    --
-    -- Pod name format (Deployment pods):
-    --   <service-name>-<replica-set-hash>-<pod-hash>
-    --   Example: auth-service-674ff99478-5nz42
-    --
-    -- Extracted service name: auth-service
-    --
-    -- The _service_name field is used by Elasticsearch as index prefix:
-    --   auth-service-2026.07.13
-    --   api-gateway-2026.07.13
-    -- ─────────────────────────────────────────────────────────────────────
-    function set_service_name(tag, timestamp, record)
-        local pod_name = ""
-        local service_name = "unknown-service"
+  parsers.conf: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
 
-        -- Get pod name from kubernetes metadata
-        if record["kubernetes"] and record["kubernetes"]["pod_name"] then
-            pod_name = record["kubernetes"]["pod_name"]
-        end
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+        Time_Keep   On
 
-        -- Pattern 1: standard deployment pod
-        -- auth-service-674ff99478-5nz42
-        -- ↑ capture this ↑
-        local s = pod_name:match("^(.+)%-%a[%a%d]+%-%a[%a%d]+$")
-        if s then
-            service_name = s
-        else
-            -- Pattern 2: simpler format
-            -- auth-service-5nz42
-            local s2 = pod_name:match("^(.+)%-%a[%a%d]+$")
-            if s2 then
-                service_name = s2
-            else
-                -- Fallback: use pod name as-is
-                service_name = pod_name
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time
+        Time_Format %d/%b/%Y:%H:%M:%S %z
+
+    [PARSER]
+        Name        syslog
+        Format      regex
+        Regex       ^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+        Time_Key    time
+        Time_Format %b %d %H:%M:%S
+
+  service_index.lua: |
+    function set_service_index(tag, timestamp, record)
+        local svc = "{{ .Values.fluentbit.filterNamespace }}-service"
+
+        if record["kubernetes"] ~= nil then
+            local labels = record["kubernetes"]["labels"]
+            if labels ~= nil and labels["app"] ~= nil then
+                svc = labels["app"]
+            elseif record["kubernetes"]["pod_name"] ~= nil then
+                local stripped = record["kubernetes"]["pod_name"]:match("^(.-)%-[%w]+%-[%w]+$")
+                if stripped ~= nil then
+                    svc = stripped
+                end
             end
         end
 
-        record["_service_name"] = service_name
+        record["_service_name"] = svc
         return 1, timestamp, record
     end
-
-  custom_parsers.conf: |
-    # ── CRI Parser ─────────────────────────────────────────────────────────
-    # CRI (Container Runtime Interface) is used by containerd
-    # which is the default runtime in EKS 1.24+
-    # Log format: <timestamp> <stream> <flags> <log>
-    [PARSER]
-        Name              cri
-        Format            regex
-        Regex             ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
-        Time_Key          time
-        Time_Format       %Y-%m-%dT%H:%M:%S.%L%z
-        Time_Keep         Off
-
-    # ── JSON Parser ────────────────────────────────────────────────────────
-    # For structured JSON logs from Spring Boot + Node.js services
-    [PARSER]
-        Name              json
-        Format            json
-        Time_Key          time
-        Time_Format       %Y-%m-%dT%H:%M:%S.%L
-        Time_Keep         Off
-
-    # ── Docker Parser ──────────────────────────────────────────────────────
-    # For Docker runtime log format (older EKS versions)
-    [PARSER]
-        Name              docker
-        Format            json
-        Time_Key          time
-        Time_Format       %Y-%m-%dT%H:%M:%S.%L
-        Time_Keep         Off
-        Decode_Field_As   escaped_utf8 log

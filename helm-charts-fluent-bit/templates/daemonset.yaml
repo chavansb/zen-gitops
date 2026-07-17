@@ -1,107 +1,89 @@
-# ─── daemonset.yaml ──────────────────────────────────────────────────────────
-# DaemonSet ensures ONE Fluent Bit pod runs on EVERY node
-# Each pod reads logs from its own node's /var/log/containers/
-#
-# WHY DaemonSet not Deployment?
-# Deployment: runs N pods on any nodes (not guaranteed coverage)
-# DaemonSet:  runs exactly 1 pod per node → all nodes covered
-#             when new node joins → Fluent Bit pod auto-created
-#             when node leaves → Fluent Bit pod auto-removed
-# ─────────────────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: fluent-bit
+  name: {{ include "fluent-bit.name" . }}
   namespace: {{ .Values.namespace }}
   labels:
-    app: fluent-bit
-    env: {{ .Values.namespace }}
+    {{- include "fluent-bit.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-      app: fluent-bit
-
+      app: {{ include "fluent-bit.name" . }}
   template:
     metadata:
       labels:
-        app: fluent-bit
-        env: {{ .Values.namespace }}
+        app: {{ include "fluent-bit.name" . }}
       annotations:
-        # Force pod restart when ConfigMap changes
-        # Without this: config changes don't restart Fluent Bit pods
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "2020"
+        prometheus.io/path: /api/v1/metrics/prometheus
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-
     spec:
-      serviceAccountName: fluent-bit
-      # Tolerations allow Fluent Bit to run on ALL nodes
-      # even nodes with taints (spot instances, special nodes)
+      serviceAccountName: {{ include "fluent-bit.name" . }}
+      terminationGracePeriodSeconds: 30
       tolerations:
         {{- toYaml .Values.tolerations | nindent 8 }}
-
-      # Host network gives access to node's network interfaces
-      # Needed to read node-level logs
-      hostNetwork: false
-
       containers:
-        - name: fluent-bit
+        - name: {{ include "fluent-bit.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-
           ports:
-            - name: metrics
+            - name: http
               containerPort: 2020
               protocol: TCP
-            - name: health
-              containerPort: 2020
-              protocol: TCP
-
-          # Liveness probe — restart if Fluent Bit is unhealthy
-          livenessProbe:
-            httpGet:
-              path: /api/v1/health
-              port: 2020
-            initialDelaySeconds: 10
-            periodSeconds: 30
-            failureThreshold: 3
-
-          # Readiness probe — don't send traffic until ready
-          readinessProbe:
-            httpGet:
-              path: /api/v1/health
-              port: 2020
-            initialDelaySeconds: 5
-            periodSeconds: 10
-
-          # Environment variables
           env:
-            # ELASTIC_API_KEY comes from Kubernetes secret
-            # kubectl create secret generic fluent-bit-elastic-credentials
-            # --from-literal=api_key='YOUR_BASE64_KEY'
             - name: ELASTIC_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.elasticsearch.credentialsSecret }}
                   key: api_key
-
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-
           volumeMounts:
-            - name: fluent-bit-config    # ← must match volumes below
+            - name: config
               mountPath: /fluent-bit/etc/
             - name: varlog
               mountPath: /var/log
+              readOnly: true
             - name: varlibdockercontainers
               mountPath: /var/lib/docker/containers
               readOnly: true
-
-          volumes:
-            - name: fluent-bit-config    # ← must match volumeMounts above
-              configMap:
-                name: fluent-bit-config
-            - name: varlog
-              hostPath:
-                path: /var/log
-            - name: varlibdockercontainers
-              hostPath:
-                path: /var/lib/docker/containers
+            - name: etcmachineid
+              mountPath: /etc/machine-id
+              readOnly: true
+            - name: fluentbit-db
+              mountPath: /var/lib/fluent-bit
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "fluent-bit.name" . }}-config
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: etcmachineid
+          hostPath:
+            path: /etc/machine-id
+            type: File
+        - name: fluentbit-db
+          hostPath:
+            path: /var/lib/fluent-bit
+            type: DirectoryOrCreate

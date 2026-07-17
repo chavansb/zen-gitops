@@ -1,55 +1,38 @@
-# ─── rbac.yaml ───────────────────────────────────────────────────────────────
-# Fluent Bit needs to call the Kubernetes API to get pod metadata
-# (pod name, namespace, labels, annotations)
-# This RBAC gives it READ-ONLY access to pods and namespaces
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ServiceAccount — identity for Fluent Bit pods
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: fluent-bit
+  name: {{ include "fluent-bit.name" . }}
   namespace: {{ .Values.namespace }}
   labels:
-    app: fluent-bit
-    env: {{ .Values.namespace }}
-
+    {{- include "fluent-bit.labels" . | nindent 4 }}
 ---
-# ClusterRole — what Fluent Bit is allowed to do
-# READ ONLY — get/list/watch on pods, namespaces, nodes
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: fluent-bit-read
+  name: {{ include "fluent-bit.name" . }}
   labels:
-    app: fluent-bit
+    {{- include "fluent-bit.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources:
       - namespaces
       - pods
+      - pods/logs
       - nodes
       - nodes/proxy
-    verbs:
-      - get
-      - list
-      - watch
-
+    verbs: ["get", "list", "watch"]
 ---
-# ClusterRoleBinding — bind ClusterRole to ServiceAccount
-# Without this: Fluent Bit can't call Kubernetes API
-# → logs have no metadata (no pod name, namespace etc)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: fluent-bit-read
+  name: {{ include "fluent-bit.name" . }}
   labels:
-    app: fluent-bit
+    {{- include "fluent-bit.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: fluent-bit-read
+  name: {{ include "fluent-bit.name" . }}
 subjects:
   - kind: ServiceAccount
-    name: fluent-bit
+    name: {{ include "fluent-bit.name" . }}
     namespace: {{ .Values.namespace }}

@@ -9,11 +9,11 @@ fluentbit:
   flush: 5
   logLevel: info
   memBufLimit: 50MB
-  db: /var/log/flb_kube.db
+  db: /var/lib/fluent-bit/flb_kube.db
   filterNamespace: dev
 
 elasticsearch:
-  host: "my-elasticsearch-project-f709b6.es.us-central1.gcp.elastic.cloud"
+  host: my-elasticsearch-project-f709b6.es.us-central1.gcp.elastic.cloud
   port: 443
   tls: true
   credentialsSecret: fluent-bit-elastic-credentials
