@@ -1,0 +1,74 @@
+defaultRules:
+  create: false
+
+grafana:
+  adminPassword: pharma-grafana-2026
+  persistence:
+    enabled: true
+    storageClassName: gp3-ebs-csi
+    size: 5Gi
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - monitoring.pharma.internal
+    paths:
+      - /
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  sidecar:
+    dashboards:
+      enabled: false
+  dashboardProviders: {}
+  dashboards: {}
+  plugins: []
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-ebs-csi
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+prometheus:
+  prometheusSpec:
+    retention: 14d
+    retentionSize: "18GB"
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-ebs-csi
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1200Mi
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
